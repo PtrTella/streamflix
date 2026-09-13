@@ -1,0 +1,418 @@
+package com.streamflix.desktop.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.streamflix.desktop.player.VideoPlayerController
+import com.streamflix.desktop.theme.*
+import com.streamflix.desktop.ui.components.AsyncImage
+import com.streamflixreborn.streamflix.aggregator.MediaSource
+import com.streamflixreborn.streamflix.aggregator.UnifiedMedia
+import com.streamflixreborn.streamflix.models.Episode
+import com.streamflixreborn.streamflix.models.Season
+import com.streamflixreborn.streamflix.models.Video
+import com.streamflixreborn.streamflix.providers.Provider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+fun DetailDialog(
+    media: UnifiedMedia,
+    onDismiss: () -> Unit,
+    onPlayVideo: (Video) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var selectedSource by remember { mutableStateOf(media.sources.firstOrNull()) }
+
+    var isLoadingDetails by remember { mutableStateOf(false) }
+    var seasons by remember { mutableStateOf<List<Season>>(emptyList()) }
+    var selectedSeason by remember { mutableStateOf<Season?>(null) }
+    var episodes by remember { mutableStateOf<List<Episode>>(emptyList()) }
+    var selectedEpisode by remember { mutableStateOf<Episode?>(null) }
+
+    var servers by remember { mutableStateOf<List<Video.Server>>(emptyList()) }
+    var isLoadingServers by remember { mutableStateOf(false) }
+    var resolvingServerId by remember { mutableStateOf<String?>(null) }
+    var statusMessage by remember { mutableStateOf("") }
+
+    fun findProvider(name: String): Provider? {
+        return Provider.providers.keys.find { it.name == name }
+    }
+
+    // Load Show / Movie details for selected source
+    LaunchedEffect(selectedSource) {
+        val source = selectedSource ?: return@LaunchedEffect
+        val provider = findProvider(source.providerName) ?: return@LaunchedEffect
+        isLoadingDetails = true
+        statusMessage = "Caricamento da ${source.providerName}..."
+
+        withContext(Dispatchers.IO) {
+            try {
+                if (source.isTvShow) {
+                    val tvShow = provider.getTvShow(source.providerId)
+                    seasons = tvShow.seasons
+                    selectedSeason = tvShow.seasons.firstOrNull()
+                } else {
+                    // Movie: fetch servers directly
+                    isLoadingServers = true
+                    val movieType = Video.Type.Movie(
+                        id = source.providerId,
+                        title = media.title,
+                        releaseDate = media.releaseYear ?: "",
+                        poster = media.poster ?: "",
+                        imdbId = null
+                    )
+                    servers = provider.getServers(source.providerId, movieType)
+                    isLoadingServers = false
+                }
+            } catch (e: Exception) {
+                statusMessage = "Errore sorgente: ${e.message}"
+            }
+        }
+        isLoadingDetails = false
+    }
+
+    // Load episodes when season changes
+    LaunchedEffect(selectedSeason) {
+        val season = selectedSeason ?: return@LaunchedEffect
+        val source = selectedSource ?: return@LaunchedEffect
+        val provider = findProvider(source.providerName) ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                episodes = provider.getEpisodesBySeason(season.id)
+                selectedEpisode = episodes.firstOrNull()
+            } catch (e: Exception) {
+                statusMessage = "Errore caricamento episodi: ${e.message}"
+            }
+        }
+    }
+
+    // Load servers when episode changes
+    LaunchedEffect(selectedEpisode) {
+        val ep = selectedEpisode ?: return@LaunchedEffect
+        val source = selectedSource ?: return@LaunchedEffect
+        val provider = findProvider(source.providerName) ?: return@LaunchedEffect
+        isLoadingServers = true
+        withContext(Dispatchers.IO) {
+            try {
+                val episodeType = Video.Type.Episode(
+                    id = ep.id,
+                    number = ep.number,
+                    title = ep.title,
+                    poster = ep.poster,
+                    overview = ep.overview,
+                    tvShow = Video.Type.Episode.TvShow(
+                        id = source.providerId,
+                        title = media.title,
+                        poster = media.poster,
+                        banner = media.banner,
+                        releaseDate = media.releaseYear,
+                        imdbId = null
+                    ),
+                    season = Video.Type.Episode.Season(
+                        number = selectedSeason?.number ?: 1,
+                        title = selectedSeason?.title
+                    )
+                )
+                servers = provider.getServers(ep.id, episodeType)
+            } catch (e: Exception) {
+                statusMessage = "Errore server episodio: ${e.message}"
+            }
+        }
+        isLoadingServers = false
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .width(820.dp)
+                .height(650.dp)
+                .clip(RoundedCornerShape(16.dp)),
+            colors = CardDefaults.cardColors(containerColor = BackgroundDark),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                    // Header Info
+                    item {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            AsyncImage(
+                                url = media.poster,
+                                contentDescription = media.title,
+                                modifier = Modifier
+                                    .width(130.dp)
+                                    .height(190.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                            )
+
+                            Spacer(modifier = Modifier.width(20.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = media.title,
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    IconButton(onClick = onDismiss) {
+                                        Icon(Icons.Default.Close, contentDescription = "Chiudi", tint = TextSecondary)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = media.releaseYear ?: "",
+                                        fontSize = 13.sp,
+                                        color = TextSecondary
+                                    )
+                                    val rating = media.rating
+                                    if (rating != null && rating > 0.0) {
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = "★ ${String.format("%.1f", rating)}",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFFB800)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = media.overview ?: "Nessuna sinossi disponibile.",
+                                    fontSize = 13.sp,
+                                    color = TextSecondary,
+                                    maxLines = 4
+                                )
+                            }
+                        }
+                    }
+
+                    // Selettore Fonti Multi-Provider
+                    item {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = "Sorgenti di Streaming Disponibili:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(media.sources) { source ->
+                                val isSelected = source == selectedSource
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { selectedSource = source },
+                                    label = { Text(source.providerName) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = AccentRed,
+                                        selectedLabelColor = Color.White,
+                                        containerColor = SurfaceDark,
+                                        labelColor = TextSecondary
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // Selettore Stagioni ed Episodi (se serie TV)
+                    if (media.isTvShow && seasons.isNotEmpty()) {
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Stagioni:",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(seasons) { season ->
+                                    val isSelected = season == selectedSeason
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { selectedSeason = season },
+                                        label = { Text("Stagione ${season.number}") },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = AccentBlue,
+                                            selectedLabelColor = Color.White,
+                                            containerColor = SurfaceDark,
+                                            labelColor = TextSecondary
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        if (episodes.isNotEmpty()) {
+                            item {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "Episodi:",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(episodes) { ep ->
+                                        val isSelected = ep == selectedEpisode
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { selectedEpisode = ep },
+                                            label = { Text("Ep. ${ep.number} ${ep.title?.take(15) ?: ""}") },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = SurfaceHighlight,
+                                                selectedLabelColor = Color.White,
+                                                containerColor = SurfaceDark,
+                                                labelColor = TextSecondary
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Server di Riproduzione
+                    item {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = "Server e Flussi Video:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (isLoadingServers) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = AccentRed)
+                            }
+                        } else if (servers.isEmpty()) {
+                            Text(
+                                text = if (statusMessage.isNotBlank()) statusMessage else "Nessun server trovato per questa sorgente.",
+                                fontSize = 13.sp,
+                                color = TextMuted
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                servers.forEach { server ->
+                                    val isResolving = server.id == resolvingServerId
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    text = server.name.ifBlank { "Server" },
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = TextPrimary
+                                                )
+                                                Text(
+                                                    text = selectedSource?.providerName ?: "",
+                                                    fontSize = 11.sp,
+                                                    color = TextMuted
+                                                )
+                                            }
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                if (isResolving) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = AccentRed)
+                                                } else {
+                                                    // Pulsante Apri con Player Esterno (VLC / IINA)
+                                                    Button(
+                                                        onClick = {
+                                                            coroutineScope.launch {
+                                                                resolvingServerId = server.id
+                                                                val provider = findProvider(selectedSource?.providerName ?: "")
+                                                                val video = withContext(Dispatchers.IO) {
+                                                                    provider?.getVideo(server)
+                                                                }
+                                                                resolvingServerId = null
+                                                                if (video != null) {
+                                                                    VideoPlayerController.launchExternalPlayer(video, server.name)
+                                                                }
+                                                            }
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceHighlight),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("VLC Esterno", fontSize = 12.sp)
+                                                    }
+
+                                                    // Pulsante Riproduci integrato
+                                                    Button(
+                                                        onClick = {
+                                                            coroutineScope.launch {
+                                                                resolvingServerId = server.id
+                                                                val provider = findProvider(selectedSource?.providerName ?: "")
+                                                                val video = withContext(Dispatchers.IO) {
+                                                                    provider?.getVideo(server)
+                                                                }
+                                                                resolvingServerId = null
+                                                                if (video != null) {
+                                                                    onPlayVideo(video)
+                                                                }
+                                                            }
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("Riproduci", fontSize = 12.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

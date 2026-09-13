@@ -1,5 +1,9 @@
 #!/usr/bin/env sh
 
+if [ -z "$JAVA_HOME" ] && [ -d "/opt/homebrew/opt/openjdk@21" ]; then
+    export JAVA_HOME="/opt/homebrew/opt/openjdk@21"
+fi
+
 #
 # Copyright 2015 the original author or authors.
 #

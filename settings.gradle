@@ -13,6 +13,5 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Streamflix"
-include ':app'
-include ':retrofit-jsoup-converter'
-include ':navigation'
+include ':core'
+include ':desktop'
