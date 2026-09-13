@@ -90,4 +90,16 @@ class ScrapingTest {
             e.printStackTrace()
         }
     }
+
+    @Test
+    fun testUnifiedHome() = runBlocking {
+        val unifiedHome = com.streamflixreborn.streamflix.aggregator.AggregatorService.getUnifiedHome()
+        println("Unified Home Categories: ${unifiedHome.size}")
+        for (cat in unifiedHome) {
+            println("Category: ${cat.name} with ${cat.items.size} items")
+            cat.items.take(5).forEach { item ->
+                println("  - Title: ${item.title} | Sources: ${item.sources.map { it.providerName to it.providerId }}")
+            }
+        }
+    }
 }

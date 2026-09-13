@@ -17,7 +17,8 @@ object UserPreferences {
     const val DOH_DISABLED_VALUE = ""
     private const val DEFAULT_SERIENSTREAM_DOMAIN = "s.to"
     private const val DEFAULT_MOFLIX_DOMAIN = "moflix-stream.xyz"
-    private const val DEFAULT_STREAMINGCOMMUNITY_DOMAIN = "streamingunity.cc"
+    private const val DEFAULT_STREAMINGCOMMUNITY_DOMAIN = "streamingunity.win"
+    private const val DEFAULT_REMOTE_DOMAINS_URL = "https://pastebin.com/raw/KgQ4jTy6"
     private const val DEFAULT_CUEVANA_DOMAIN = "cuevana.gs"
     private const val DEFAULT_POSEIDON_DOMAIN = "www.poseidonhd2.co"
 
@@ -195,7 +196,7 @@ object UserPreferences {
     }
 
     var remoteDomainsUrl: String
-        get() = storage["REMOTE_DOMAINS_URL"] as? String ?: ""
+        get() = storage["REMOTE_DOMAINS_URL"] as? String ?: DEFAULT_REMOTE_DOMAINS_URL
         set(value) {
             storage["REMOTE_DOMAINS_URL"] = value.trim()
             savePreferences()
@@ -239,6 +240,42 @@ object UserPreferences {
                             streamingcommunityDomain = cleaned
                         }
                         count++
+                    }
+                }
+            } else {
+                // Line-by-line list of URLs (e.g. Pastebin plain text list)
+                val lines = trimmed.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
+                lines.forEach { line ->
+                    val cleaned = cleanDomain(line)
+                    if (cleaned.isNotBlank()) {
+                        val lower = cleaned.lowercase()
+                        when {
+                            lower.contains("streamingcommunity") || lower.contains("streamingunity") -> {
+                                setCustomProviderDomain("StreamingCommunity", cleaned)
+                                streamingcommunityDomain = cleaned
+                                count++
+                            }
+                            lower.contains("cb01") -> {
+                                setCustomProviderDomain("CB01", cleaned)
+                                count++
+                            }
+                            lower.contains("altadefinizione") -> {
+                                setCustomProviderDomain("Altadefinizione01", cleaned)
+                                count++
+                            }
+                            lower.contains("animeworld") -> {
+                                setCustomProviderDomain("AnimeWorld", cleaned)
+                                count++
+                            }
+                            lower.contains("guardaserie") -> {
+                                setCustomProviderDomain("GuardaSerie", cleaned)
+                                count++
+                            }
+                            lower.contains("eurostreaming") -> {
+                                setCustomProviderDomain("Eurostreaming", cleaned)
+                                count++
+                            }
+                        }
                     }
                 }
             }

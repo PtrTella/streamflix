@@ -52,8 +52,8 @@ class StreamingCommunityProvider(private val _language: String? = null) : Provid
     private val TAG: String
         get() = "SCProviderDebug[$LANG]"
 
-    private val DEFAULT_DOMAIN: String = "streamingunity.cc"
-    private val BLOCKED_DOMAINS = setOf("streamingcommunityz.green", "streamingunity.club", "streamingunity.bike", "streamingcommunityz.buzz")
+    private val DEFAULT_DOMAIN: String = "streamingunity.win"
+    private val BLOCKED_DOMAINS = setOf("streamingunity.cc", "streamingcommunityz.green", "streamingunity.club", "streamingunity.bike", "streamingcommunityz.buzz")
     override val baseUrl = DEFAULT_DOMAIN
     private var _domain: String? = null
     private var domain: String
@@ -411,7 +411,7 @@ class StreamingCommunityProvider(private val _language: String? = null) : Provid
         val tmdbMovie = tmdbMovieDeferred.await()
 
         return@coroutineScope Movie(
-            id = id, title = tmdbMovie?.title ?: title.name, overview = tmdbMovie?.overview ?: title.plot, released = title.lastAirDate, rating = title.score?.toDoubleOrNull(), quality = title.quality, runtime = title.runtime, 
+            id = id, title = tmdbMovie?.title ?: title.name, overview = tmdbMovie?.overview?.takeIf { it.isNotBlank() } ?: title.plot, released = title.lastAirDate, rating = title.score?.toDoubleOrNull(), quality = title.quality, runtime = title.runtime, 
             poster = getImageLink(title.images.find { img -> img.type == "poster" }?.filename), banner = getImageLink(title.images.find { img -> img.type == "background" }?.filename), 
             genres = title.genres?.map { Genre(id = it.id, name = it.name) } ?: listOf(), 
             cast = title.actors?.map { actor ->
@@ -456,7 +456,7 @@ class StreamingCommunityProvider(private val _language: String? = null) : Provid
         val tmdbShowDeferred = async { title.tmdbId?.let { TmdbUtils.getTvShowById(it, language = language) } }
         val tmdbShow = tmdbShowDeferred.await()
 
-        return@coroutineScope TvShow(id = id, title = tmdbShow?.title ?: title.name, overview = tmdbShow?.overview ?: title.plot, released = title.lastAirDate, rating = title.score?.toDoubleOrNull(), quality = title.quality, 
+        return@coroutineScope TvShow(id = id, title = tmdbShow?.title ?: title.name, overview = tmdbShow?.overview?.takeIf { it.isNotBlank() } ?: title.plot, released = title.lastAirDate, rating = title.score?.toDoubleOrNull(), quality = title.quality, 
             poster = getImageLink(title.images.find { img -> img.type == "poster" }?.filename), banner = getImageLink(title.images.find { img -> img.type == "background" }?.filename), 
             genres = title.genres?.map { Genre(id = it.id, name = it.name) } ?: listOf(), 
             cast = title.actors?.map { actor ->

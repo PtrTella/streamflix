@@ -24,10 +24,13 @@ import androidx.compose.ui.window.Dialog
 import com.streamflix.desktop.player.VideoPlayerController
 import com.streamflix.desktop.theme.*
 import com.streamflix.desktop.ui.components.AsyncImage
+import com.streamflixreborn.streamflix.aggregator.AggregatorService
 import com.streamflixreborn.streamflix.aggregator.MediaSource
 import com.streamflixreborn.streamflix.aggregator.UnifiedMedia
 import com.streamflixreborn.streamflix.models.Episode
+import com.streamflixreborn.streamflix.models.Movie
 import com.streamflixreborn.streamflix.models.Season
+import com.streamflixreborn.streamflix.models.TvShow
 import com.streamflixreborn.streamflix.models.Video
 import com.streamflixreborn.streamflix.providers.Provider
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +44,8 @@ fun DetailDialog(
     onPlayVideo: (Video) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var selectedSource by remember { mutableStateOf(media.sources.firstOrNull()) }
+    var availableSources by remember(media) { mutableStateOf(media.sources.toMutableList()) }
+    var selectedSource by remember { mutableStateOf(availableSources.firstOrNull()) }
 
     var currentOverview by remember { mutableStateOf(media.overview) }
     var currentPoster by remember { mutableStateOf(media.poster) }
@@ -59,17 +63,81 @@ fun DetailDialog(
     var resolvingServerId by remember { mutableStateOf<String?>(null) }
     var statusMessage by remember { mutableStateOf("") }
 
-    fun findProvider(name: String): Provider? {
-        return Provider.providers.keys.find { it.name.equals(name, ignoreCase = true) }
-            ?: Provider.findByName(name)
+    // Parallel multi-provider search for the current title
+    LaunchedEffect(media.title) {
+        val providers = AggregatorService.getActiveProviders()
+        val currentNames = availableSources.map { it.providerName.lowercase() }.toSet()
+        val providersToQuery = providers.filter { p ->
+            !currentNames.any { it.contains(p.name.lowercase()) || p.name.lowercase().contains(it) }
+        }
+
+        withContext(Dispatchers.IO) {
+            providersToQuery.forEach { provider ->
+                launch {
+                    try {
+                        val results = provider.search(media.title)
+                        val match = results.firstOrNull { item ->
+                            when (item) {
+                                is Movie -> AggregatorService.isSimilarTitle(item.title, media.title)
+                                is TvShow -> AggregatorService.isSimilarTitle(item.title, media.title)
+                                else -> false
+                            }
+                        }
+                        if (match != null) {
+                            val (itemId, isTv) = when (match) {
+                                is Movie -> match.id to false
+                                is TvShow -> match.id to true
+                                else -> "" to false
+                            }
+                            if (itemId.isNotBlank()) {
+                                val newSource = MediaSource(
+                                    providerName = provider.name,
+                                    providerId = itemId,
+                                    isTvShow = isTv
+                                )
+                                withContext(Dispatchers.Main) {
+                                    if (availableSources.none { it.providerName.equals(provider.name, ignoreCase = true) || it.providerId == newSource.providerId }) {
+                                        availableSources = (availableSources + newSource).toMutableList()
+                                        if (selectedSource == null) {
+                                            selectedSource = newSource
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_: Throwable) {
+                        // ignore provider lookup errors
+                    }
+                }
+            }
+        }
+    }
+
+    fun resolveProvider(source: MediaSource): Provider? {
+        val pid = source.providerId.lowercase()
+        if (pid.contains("cb01")) return com.streamflixreborn.streamflix.providers.CB01Provider
+        if (pid.contains("altadefinizione")) return com.streamflixreborn.streamflix.providers.Altadefinizione01Provider
+        if (pid.contains("animeworld")) return com.streamflixreborn.streamflix.providers.AnimeWorldProvider
+
+        val byName = Provider.providers.keys.find { it.name.equals(source.providerName, ignoreCase = true) }
+            ?: Provider.findByName(source.providerName)
+        if (byName != null) return byName
+
+        return when {
+            pid.contains("cb01") -> com.streamflixreborn.streamflix.providers.CB01Provider
+            pid.contains("altadefinizione") -> com.streamflixreborn.streamflix.providers.Altadefinizione01Provider
+            pid.contains("animeworld") -> com.streamflixreborn.streamflix.providers.AnimeWorldProvider
+            else -> com.streamflixreborn.streamflix.providers.StreamingCommunityProvider("it")
+        }
     }
 
     // Load Show / Movie details for selected source
     LaunchedEffect(selectedSource) {
         val source = selectedSource ?: return@LaunchedEffect
-        val provider = findProvider(source.providerName) ?: return@LaunchedEffect
+        val provider = resolveProvider(source) ?: return@LaunchedEffect
+        val providerDisplayName = provider.name
         isLoadingDetails = true
-        statusMessage = "Caricamento da ${source.providerName}..."
+        statusMessage = "Caricamento da $providerDisplayName..."
 
         withContext(Dispatchers.IO) {
             try {
@@ -117,7 +185,7 @@ fun DetailDialog(
     LaunchedEffect(selectedSeason) {
         val season = selectedSeason ?: return@LaunchedEffect
         val source = selectedSource ?: return@LaunchedEffect
-        val provider = findProvider(source.providerName) ?: return@LaunchedEffect
+        val provider = resolveProvider(source) ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
             try {
                 episodes = provider.getEpisodesBySeason(season.id)
@@ -132,7 +200,7 @@ fun DetailDialog(
     LaunchedEffect(selectedEpisode) {
         val ep = selectedEpisode ?: return@LaunchedEffect
         val source = selectedSource ?: return@LaunchedEffect
-        val provider = findProvider(source.providerName) ?: return@LaunchedEffect
+        val provider = resolveProvider(source) ?: return@LaunchedEffect
         isLoadingServers = true
         withContext(Dispatchers.IO) {
             try {
@@ -249,12 +317,13 @@ fun DetailDialog(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(media.sources) { source ->
+                            items(availableSources) { source ->
                                 val isSelected = source == selectedSource
+                                val provName = resolveProvider(source)?.name ?: source.providerName
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = { selectedSource = source },
-                                    label = { Text(source.providerName) },
+                                    label = { Text(provName) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = AccentRed,
                                         selectedLabelColor = Color.White,
@@ -378,63 +447,70 @@ fun DetailDialog(
                                                 if (isResolving) {
                                                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = AccentRed)
                                                 } else {
-                                                    // Pulsante Apri con Player Esterno (VLC / IINA)
-                                                    Button(
-                                                        onClick = {
-                                                            coroutineScope.launch {
-                                                                resolvingServerId = server.id
-                                                                statusMessage = "Risoluzione stream per ${server.name}..."
-                                                                try {
-                                                                    val provider = findProvider(selectedSource?.providerName ?: "")
-                                                                    val video = withContext(Dispatchers.IO) {
-                                                                        provider?.getVideo(server)
-                                                                    }
-                                                                    if (video != null) {
-                                                                        statusMessage = ""
-                                                                        VideoPlayerController.launchExternalPlayer(video, server.name)
-                                                                    } else {
-                                                                        statusMessage = "Impossibile estrarre lo stream da ${server.name}"
-                                                                    }
-                                                                } catch (e: Exception) {
-                                                                    statusMessage = "Errore stream: ${e.message ?: "Fallito"}"
-                                                                } finally {
-                                                                    resolvingServerId = null
-                                                                }
-                                                            }
-                                                        },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceHighlight),
-                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                                        shape = RoundedCornerShape(8.dp)
-                                                    ) {
-                                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text("VLC Esterno", fontSize = 12.sp)
-                                                    }
+                                                     // Pulsante Apri con Player Esterno (VLC / IINA)
+                                                     Button(
+                                                         onClick = {
+                                                             coroutineScope.launch {
+                                                                 resolvingServerId = server.id
+                                                                 statusMessage = "Risoluzione stream per ${server.name}..."
+                                                                 try {
+                                                                     val src = selectedSource ?: return@launch
+                                                                     val provider = resolveProvider(src)
+                                                                     val video = withContext(Dispatchers.IO) {
+                                                                         provider?.getVideo(server)
+                                                                     }
+                                                                     if (video != null) {
+                                                                         statusMessage = ""
+                                                                         VideoPlayerController.launchExternalPlayer(video, server.name)
+                                                                     } else {
+                                                                         statusMessage = "Impossibile estrarre lo stream da ${server.name}"
+                                                                     }
+                                                                 } catch (e: Exception) {
+                                                                     statusMessage = "Errore stream: ${e.message ?: "Fallito"}"
+                                                                 } finally {
+                                                                     resolvingServerId = null
+                                                                 }
+                                                             }
+                                                         },
+                                                         colors = ButtonDefaults.buttonColors(containerColor = SurfaceHighlight),
+                                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                         shape = RoundedCornerShape(8.dp)
+                                                     ) {
+                                                         Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                         Spacer(modifier = Modifier.width(6.dp))
+                                                         Text("VLC Esterno", fontSize = 12.sp)
+                                                     }
 
-                                                    // Pulsante Riproduci integrato
-                                                    Button(
-                                                        onClick = {
-                                                            coroutineScope.launch {
-                                                                resolvingServerId = server.id
-                                                                statusMessage = "Risoluzione stream per ${server.name}..."
-                                                                try {
-                                                                    val provider = findProvider(selectedSource?.providerName ?: "")
-                                                                    val video = withContext(Dispatchers.IO) {
-                                                                        provider?.getVideo(server)
-                                                                    }
-                                                                    if (video != null) {
-                                                                        statusMessage = ""
-                                                                        onPlayVideo(video)
-                                                                    } else {
-                                                                        statusMessage = "Impossibile estrarre lo stream da ${server.name}"
-                                                                    }
-                                                                } catch (e: Exception) {
-                                                                    statusMessage = "Errore stream: ${e.message ?: "Fallito"}"
-                                                                } finally {
-                                                                    resolvingServerId = null
-                                                                }
-                                                            }
-                                                        },
+                                                     // Pulsante Riproduci integrato
+                                                     Button(
+                                                         onClick = {
+                                                             coroutineScope.launch {
+                                                                 resolvingServerId = server.id
+                                                                 statusMessage = "Risoluzione stream per ${server.name}..."
+                                                                 try {
+                                                                     val src = selectedSource ?: return@launch
+                                                                     val provider = resolveProvider(src)
+                                                                     val video = withContext(Dispatchers.IO) {
+                                                                         provider?.getVideo(server)
+                                                                     }
+                                                                     if (video != null) {
+                                                                         if (VideoPlayerController.isVlcDylibCompatible()) {
+                                                                             statusMessage = ""
+                                                                             onPlayVideo(video)
+                                                                         } else {
+                                                                             statusMessage = "Avviato nel player esterno (VLC/IINA)!"
+                                                                             VideoPlayerController.launchExternalPlayer(video, server.name)
+                                                                         }
+                                                                     } else {
+                                                                         statusMessage = "Impossibile estrarre lo stream da ${server.name}"
+                                                                     }
+                                                                 } catch (e: Exception) {
+                                                                     statusMessage = "Errore stream: ${e.message ?: "Fallito"}"
+                                                                 } finally {
+                                                                     resolvingServerId = null
+                                                                 }
+                                                             }
+                                                         },
                                                         colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
                                                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                                                         shape = RoundedCornerShape(8.dp)

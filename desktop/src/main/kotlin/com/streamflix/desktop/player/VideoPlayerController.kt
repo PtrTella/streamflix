@@ -7,17 +7,52 @@ import java.io.File
 
 object VideoPlayerController {
 
-    private var isVlcLibConfigured = false
+    private var isVlcLibConfigured: Boolean? = null
 
-    fun configureVlcDiscovery() {
-        if (isVlcLibConfigured) return
-        val vlcAppLib = File("/Applications/VLC.app/Contents/MacOS/lib")
-        if (vlcAppLib.exists()) {
-            System.setProperty("jna.library.path", vlcAppLib.absolutePath)
-            System.setProperty("VLC_PLUGIN_PATH", "/Applications/VLC.app/Contents/MacOS/plugins")
+    /**
+     * Checks if /Applications/VLC.app contains native dylibs matching the current JVM architecture.
+     * On Apple Silicon Macs (aarch64/arm64), an Intel (x86_64) libvlccore cannot be loaded in-process.
+     */
+    fun isVlcDylibCompatible(): Boolean {
+        val dylib = File("/Applications/VLC.app/Contents/MacOS/lib/libvlccore.dylib")
+        if (!dylib.exists()) return false
+
+        val osArch = System.getProperty("os.arch")?.lowercase() ?: ""
+        val isArmHost = osArch.contains("aarch64") || osArch.contains("arm64")
+
+        return try {
+            val proc = ProcessBuilder("file", dylib.absolutePath).start()
+            val output = proc.inputStream.bufferedReader().readText()
+            proc.waitFor()
+            if (isArmHost) {
+                output.contains("arm64")
+            } else {
+                output.contains("x86_64")
+            }
+        } catch (_: Throwable) {
+            false
         }
-        NativeDiscovery().discover()
-        isVlcLibConfigured = true
+    }
+
+    fun configureVlcDiscovery(): Boolean {
+        if (isVlcLibConfigured != null) return isVlcLibConfigured == true
+        if (!isVlcDylibCompatible()) {
+            isVlcLibConfigured = false
+            return false
+        }
+        return try {
+            val vlcAppLib = File("/Applications/VLC.app/Contents/MacOS/lib")
+            if (vlcAppLib.exists()) {
+                System.setProperty("jna.library.path", vlcAppLib.absolutePath)
+                System.setProperty("VLC_PLUGIN_PATH", "/Applications/VLC.app/Contents/MacOS/plugins")
+            }
+            val discovered = NativeDiscovery().discover()
+            isVlcLibConfigured = discovered
+            discovered
+        } catch (_: Throwable) {
+            isVlcLibConfigured = false
+            false
+        }
     }
 
     fun isVlcAvailable(): Boolean {
@@ -56,6 +91,7 @@ object VideoPlayerController {
 
         when {
             iinaBinary.exists() -> {
+                // IINA is native Swift Apple Silicon and performs exceptionally well
                 val cmd = mutableListOf("/usr/bin/open", "-a", "IINA", streamUrl)
                 if (referer.isNotBlank()) {
                     cmd.addAll(listOf("--args", "--mpv-referrer=$referer"))
@@ -63,6 +99,7 @@ object VideoPlayerController {
                 ProcessBuilder(cmd).start()
             }
             vlcBinary.exists() -> {
+                // VLC binary runs smoothly as an external standalone process (even under Rosetta 2)
                 val cmd = mutableListOf(vlcBinary.absolutePath)
                 if (referer.isNotBlank()) cmd.add("--http-referrer=$referer")
                 if (userAgent.isNotBlank()) cmd.add("--http-user-agent=$userAgent")
@@ -70,25 +107,29 @@ object VideoPlayerController {
                 ProcessBuilder(cmd).start()
             }
             else -> {
-                // Fallback to macOS open
-                ProcessBuilder("open", streamUrl).start()
+                // Fallback to default macOS URL opener
+                ProcessBuilder("/usr/bin/open", streamUrl).start()
             }
         }
     }
 
-    fun createMediaPlayerComponent(video: Video): EmbeddedMediaPlayerComponent {
-        configureVlcDiscovery()
-        val component = EmbeddedMediaPlayerComponent()
-        val streamUrl = resolveStreamUrl(video.source)
-        val headers = video.headers ?: emptyMap()
-        val referer = headers["Referer"] ?: headers["referer"] ?: ""
-        val userAgent = headers["User-Agent"] ?: headers["user-agent"] ?: ""
+    fun createMediaPlayerComponent(video: Video): EmbeddedMediaPlayerComponent? {
+        if (!configureVlcDiscovery()) return null
+        return try {
+            val component = EmbeddedMediaPlayerComponent()
+            val streamUrl = resolveStreamUrl(video.source)
+            val headers = video.headers ?: emptyMap()
+            val referer = headers["Referer"] ?: headers["referer"] ?: ""
+            val userAgent = headers["User-Agent"] ?: headers["user-agent"] ?: ""
 
-        val options = mutableListOf<String>()
-        if (referer.isNotBlank()) options.add(":http-referrer=$referer")
-        if (userAgent.isNotBlank()) options.add(":http-user-agent=$userAgent")
+            val options = mutableListOf<String>()
+            if (referer.isNotBlank()) options.add(":http-referrer=$referer")
+            if (userAgent.isNotBlank()) options.add(":http-user-agent=$userAgent")
 
-        component.mediaPlayer().media().play(streamUrl, *options.toTypedArray())
-        return component
+            component.mediaPlayer().media().play(streamUrl, *options.toTypedArray())
+            component
+        } catch (_: Throwable) {
+            null
+        }
     }
 }

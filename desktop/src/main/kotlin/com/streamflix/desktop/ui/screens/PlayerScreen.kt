@@ -30,20 +30,23 @@ fun PlayerScreen(
     val isVlcAvailable = remember { VideoPlayerController.isVlcAvailable() }
 
     DisposableEffect(video) {
-        val comp = if (isVlcAvailable) {
-            try {
-                VideoPlayerController.createMediaPlayerComponent(video)
-            } catch (_: Exception) {
-                null
-            }
-        } else null
+        val comp = try {
+            VideoPlayerController.createMediaPlayerComponent(video)
+        } catch (_: Throwable) {
+            null
+        }
         vlcComponent = comp
+
+        if (comp == null) {
+            // Auto-launch external player (IINA / VLC) seamlessly
+            VideoPlayerController.launchExternalPlayer(video)
+        }
 
         onDispose {
             try {
                 comp?.mediaPlayer()?.controls()?.stop()
                 comp?.release()
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 

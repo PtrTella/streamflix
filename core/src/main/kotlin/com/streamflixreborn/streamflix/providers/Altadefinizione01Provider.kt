@@ -274,7 +274,7 @@ object Altadefinizione01Provider : Provider {
         return Movie(
             id = id,
             title = title,
-            overview = tmdbMovie?.overview ?: doc.selectFirst(".sbox .entry-content p")?.ownText()?.trim(),
+            overview = tmdbMovie?.overview?.takeIf { it.isNotBlank() } ?: doc.selectFirst(".sbox .entry-content p")?.ownText()?.trim(),
             released = tmdbMovie?.released?.let { "${it.get(java.util.Calendar.YEAR)}-${it.get(java.util.Calendar.MONTH) + 1}-${it.get(java.util.Calendar.DAY_OF_MONTH)}" }?: doc.select("p.meta_dd:has(b.icon-clock)").text().replace(Regex("[^0-9]"), "").takeIf { it.isNotBlank() },
             runtime = tmdbMovie?.runtime ?: doc.select("p.meta_dd:has(b.icon-time)").text().replace(Regex("[^0-9]"), "").toIntOrNull(),
             trailer = tmdbMovie?.trailer ?: doc.selectFirst(".btn_trailer a[href]")?.attr("href")?.takeIf { it.contains("youtube", true) },
@@ -406,7 +406,7 @@ object Altadefinizione01Provider : Provider {
         return TvShow(
             id = id,
             title = title,
-            overview = tmdbTvShow?.overview ?: doc.selectFirst(".sbox .entry-content p")?.ownText()?.trim(),
+            overview = tmdbTvShow?.overview?.takeIf { it.isNotBlank() } ?: doc.selectFirst(".sbox .entry-content p")?.ownText()?.trim(),
             released = tmdbTvShow?.released?.let { "${it.get(java.util.Calendar.YEAR)}-${it.get(java.util.Calendar.MONTH) + 1}-${it.get(java.util.Calendar.DAY_OF_MONTH)}" },
             runtime = tmdbTvShow?.runtime,
             trailer = tmdbTvShow?.trailer ?: doc.selectFirst(".btn_trailer a[href]")?.attr("href")?.takeIf { it.contains("youtube", true) },

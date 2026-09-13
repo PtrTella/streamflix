@@ -39,7 +39,7 @@ object TmdbUtils {
             Movie(
                 id = details.id.toString(),
                 title = details.title,
-                overview = details.overview,
+                overview = details.overview?.takeIf { it.isNotBlank() },
                 released = details.releaseDate,
                 runtime = details.runtime,
                 trailer = details.videos?.results
@@ -76,7 +76,7 @@ object TmdbUtils {
             TvShow(
                 id = details.id.toString(),
                 title = details.name,
-                overview = details.overview,
+                overview = details.overview?.takeIf { it.isNotBlank() },
                 released = details.firstAirDate,
                 trailer = details.videos?.results
                     ?.sortedBy { it.publishedAt ?: "" }

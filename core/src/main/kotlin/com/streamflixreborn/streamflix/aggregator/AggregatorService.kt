@@ -61,7 +61,8 @@ object AggregatorService {
         val deferredHomes = providers.map { provider ->
             async {
                 runCatching {
-                    provider.getHome()
+                    val home = provider.getHome()
+                    home.map { cat -> cat to provider.name }
                 }.getOrDefault(emptyList())
             }
         }
@@ -69,17 +70,19 @@ object AggregatorService {
         val allCategories = deferredHomes.awaitAll().flatten()
         val unifiedMap = linkedMapOf<String, MutableList<UnifiedMedia>>()
 
-        for (cat in allCategories) {
+        for ((cat, provName) in allCategories) {
             val catName = cat.name.trim().ifEmpty { "In Evidenza" }
             val list = unifiedMap.computeIfAbsent(catName) { mutableListOf() }
             for (item in cat.list) {
                 when (item) {
                     is Movie -> {
-                        val unified = toUnified(item, item.providerName ?: "StreamingCommunity")
+                        item.providerName = provName
+                        val unified = toUnified(item, provName)
                         mergeOrAdd(list, unified)
                     }
                     is TvShow -> {
-                        val unified = toUnified(item, item.providerName ?: "StreamingCommunity")
+                        item.providerName = provName
+                        val unified = toUnified(item, provName)
                         mergeOrAdd(list, unified)
                     }
                 }
@@ -184,7 +187,13 @@ object AggregatorService {
 
     private fun toUnified(movie: Movie, defaultProviderName: String = "StreamingCommunity"): UnifiedMedia {
         val year = movie.released?.get(java.util.Calendar.YEAR)?.toString()
-        val providerName = movie.providerName ?: defaultProviderName
+        val inferredProviderName = when {
+            movie.providerName != null -> movie.providerName!!
+            movie.id.contains("cb01", ignoreCase = true) -> "CB01"
+            movie.id.contains("altadefinizione", ignoreCase = true) -> "Altadefinizione01"
+            movie.id.contains("animeworld", ignoreCase = true) -> "AnimeWorld"
+            else -> defaultProviderName
+        }
         return UnifiedMedia(
             id = movie.id,
             title = movie.title,
@@ -194,13 +203,19 @@ object AggregatorService {
             releaseYear = year,
             overview = movie.overview,
             isTvShow = false,
-            sources = mutableListOf(MediaSource(providerName = providerName, providerId = movie.id, isTvShow = false))
+            sources = mutableListOf(MediaSource(providerName = inferredProviderName, providerId = movie.id, isTvShow = false))
         )
     }
 
     private fun toUnified(tvShow: TvShow, defaultProviderName: String = "StreamingCommunity"): UnifiedMedia {
         val year = tvShow.released?.get(java.util.Calendar.YEAR)?.toString()
-        val providerName = tvShow.providerName ?: defaultProviderName
+        val inferredProviderName = when {
+            tvShow.providerName != null -> tvShow.providerName!!
+            tvShow.id.contains("cb01", ignoreCase = true) -> "CB01"
+            tvShow.id.contains("altadefinizione", ignoreCase = true) -> "Altadefinizione01"
+            tvShow.id.contains("animeworld", ignoreCase = true) -> "AnimeWorld"
+            else -> defaultProviderName
+        }
         return UnifiedMedia(
             id = tvShow.id,
             title = tvShow.title,
@@ -210,7 +225,7 @@ object AggregatorService {
             releaseYear = year,
             overview = tvShow.overview,
             isTvShow = true,
-            sources = mutableListOf(MediaSource(providerName = providerName, providerId = tvShow.id, isTvShow = true))
+            sources = mutableListOf(MediaSource(providerName = inferredProviderName, providerId = tvShow.id, isTvShow = true))
         )
     }
 }
