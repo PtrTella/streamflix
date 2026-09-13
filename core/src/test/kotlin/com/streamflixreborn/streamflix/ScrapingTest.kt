@@ -102,4 +102,27 @@ class ScrapingTest {
             }
         }
     }
+
+    @Test
+    fun testMultiProviderSearch() = runBlocking {
+        val query = "Deadpool"
+        println("--- Testing Search for '$query' ---")
+        val providers = com.streamflixreborn.streamflix.aggregator.AggregatorService.getActiveProviders()
+        for (provider in providers) {
+            try {
+                val results = provider.search(query)
+                println("Provider: ${provider.name} returned ${results.size} results:")
+                results.take(3).forEach {
+                    val title = when (it) {
+                        is com.streamflixreborn.streamflix.models.Movie -> it.title
+                        is com.streamflixreborn.streamflix.models.TvShow -> it.title
+                        else -> it.toString()
+                    }
+                    println("   * $title")
+                }
+            } catch (e: Exception) {
+                println("Provider: ${provider.name} ERROR: ${e.message}")
+            }
+        }
+    }
 }

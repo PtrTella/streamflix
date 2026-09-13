@@ -96,11 +96,12 @@ object AggregatorService {
 
     suspend fun searchGlobal(query: String): List<UnifiedMedia> = coroutineScope {
         if (query.isBlank()) return@coroutineScope emptyList()
+        val clean = cleanTitleForSearch(query).ifBlank { query }
         val providers = getActiveProviders()
         val results = providers.map { provider ->
             async {
                 runCatching {
-                    val res = provider.search(query)
+                    val res = provider.search(clean)
                     res.map { item ->
                         when (item) {
                             is Movie -> {
@@ -162,9 +163,20 @@ object AggregatorService {
         return dist <= allowedDist
     }
 
-    private fun normalizeTitle(title: String): String {
+    fun cleanTitleForSearch(title: String): String {
+        return title
+            .replace(Regex("""\[.*?\]"""), " ")
+            .replace(Regex("""\(.*?\)"""), " ")
+            .replace(Regex("""(?i)\b(hd|3d|4k|uhd|ita|subita|sub-ita)\b"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
+
+    fun normalizeTitle(title: String): String {
         return title.lowercase(Locale.ROOT)
-            .replace(Regex("""\((19|20)\d{2}\)"""), "")
+            .replace(Regex("""\[.*?\]"""), " ")
+            .replace(Regex("""\(.*?\)"""), " ")
+            .replace(Regex("""(?i)\b(hd|3d|4k|uhd|ita|subita|sub-ita)\b"""), " ")
             .replace(Regex("""[^a-z0-9]"""), "")
             .trim()
     }

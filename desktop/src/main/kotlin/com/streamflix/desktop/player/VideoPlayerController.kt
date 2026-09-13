@@ -21,16 +21,14 @@ object VideoPlayerController {
         val isArmHost = osArch.contains("aarch64") || osArch.contains("arm64")
 
         return try {
-            val proc = ProcessBuilder("file", dylib.absolutePath).start()
-            val output = proc.inputStream.bufferedReader().readText()
-            proc.waitFor()
-            if (isArmHost) {
-                output.contains("arm64")
-            } else {
-                output.contains("x86_64")
-            }
+            val bytes = ByteArray(8)
+            dylib.inputStream().use { it.read(bytes) }
+            // Mach-O 64-bit header: offset 4 contains CPU type (0x0C = ARM64, 0x07 = x86_64)
+            val isArm64Lib = bytes[4] == 0x0C.toByte() && bytes[7] == 0x01.toByte()
+            val isX86Lib = bytes[4] == 0x07.toByte() && bytes[7] == 0x01.toByte()
+            if (isArmHost) isArm64Lib else isX86Lib
         } catch (_: Throwable) {
-            false
+            true
         }
     }
 

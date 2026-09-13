@@ -33,6 +33,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var cb01Domain by remember { mutableStateOf(UserPreferences.getCustomProviderDomain("CB01", "cb01uno.homes")) }
     var altaDomain by remember { mutableStateOf(UserPreferences.getCustomProviderDomain("Altadefinizione01", "altadefinizione01.baby")) }
     var animeWorldDomain by remember { mutableStateOf(UserPreferences.getCustomProviderDomain("AnimeWorld", "animeworld.so")) }
+    var guardaSerieDomain by remember { mutableStateOf(UserPreferences.getCustomProviderDomain("GuardaSerie", "guardaserie.skin")) }
+    var eurostreamingDomain by remember { mutableStateOf(UserPreferences.getCustomProviderDomain("Eurostreaming", "eurostreaming.quest")) }
 
     var importJsonText by remember { mutableStateOf("") }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -70,6 +72,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         UserPreferences.setCustomProviderDomain("CB01", cb01Domain)
                         UserPreferences.setCustomProviderDomain("Altadefinizione01", altaDomain)
                         UserPreferences.setCustomProviderDomain("AnimeWorld", animeWorldDomain)
+                        UserPreferences.setCustomProviderDomain("GuardaSerie", guardaSerieDomain)
+                        UserPreferences.setCustomProviderDomain("Eurostreaming", eurostreamingDomain)
                         savedMessage = true
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
@@ -114,7 +118,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            "Inserisci l'URL di un file JSON remoto (es. GitHub raw, Pastebin). L'app scaricherà e aggiornerà automaticamente i domini ad ogni avvio o manualmente.",
+                            "Inserisci l'URL di un file remoto (es. Pastebin o GitHub raw). L'app scaricherà e aggiornerà automaticamente i domini ad ogni avvio o premendo Aggiorna Ora.",
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -128,8 +132,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             OutlinedTextField(
                                 value = remoteUrl,
                                 onValueChange = { remoteUrl = it },
-                                label = { Text("URL File JSON Remoto") },
-                                placeholder = { Text("https://raw.githubusercontent.com/.../domains.json") },
+                                label = { Text("URL File Remoto / Pastebin") },
+                                placeholder = { Text("https://pastebin.com/raw/...") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -153,6 +157,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                             cb01Domain = UserPreferences.getCustomProviderDomain("CB01", "cb01uno.homes")
                                             altaDomain = UserPreferences.getCustomProviderDomain("Altadefinizione01", "altadefinizione01.baby")
                                             animeWorldDomain = UserPreferences.getCustomProviderDomain("AnimeWorld", "animeworld.so")
+                                            guardaSerieDomain = UserPreferences.getCustomProviderDomain("GuardaSerie", "guardaserie.skin")
+                                            eurostreamingDomain = UserPreferences.getCustomProviderDomain("Eurostreaming", "eurostreaming.quest")
                                             syncMessage = "Domini aggiornati con successo dalla lista remota!"
                                         } else {
                                             syncMessage = "Impossibile scaricare o applicare la lista remota (verifica URL o connessione)."
@@ -182,6 +188,53 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 fontSize = 12.sp,
                                 color = if (syncMessage!!.contains("successo")) Color(0xFF4ADE80) else AccentRed
                             )
+                        }
+
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(SurfaceHighlight))
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text("Sorgenti Configurate e Domini Attivi Rilevati:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val domainList = listOf(
+                            "StreamingCommunity" to scDomain,
+                            "CB01" to cb01Domain,
+                            "Altadefinizione" to altaDomain,
+                            "AnimeWorld" to animeWorldDomain,
+                            "GuardaSerie" to guardaSerieDomain,
+                            "Eurostreaming" to eurostreamingDomain
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            domainList.forEach { (prov, domain) ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(SurfaceHighlight)
+                                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(if (domain.isNotBlank()) Color(0xFF4ADE80) else AccentRed)
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(prov, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                                    }
+                                    Text(
+                                        text = if (domain.isNotBlank()) "https://$domain" else "Non configurato",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = if (domain.isNotBlank()) AccentBlue else TextMuted
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -310,6 +363,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         cb01Domain = UserPreferences.getCustomProviderDomain("CB01", "cb01uno.homes")
                         altaDomain = UserPreferences.getCustomProviderDomain("Altadefinizione01", "altadefinizione01.baby")
                         animeWorldDomain = UserPreferences.getCustomProviderDomain("AnimeWorld", "animeworld.so")
+                        guardaSerieDomain = UserPreferences.getCustomProviderDomain("GuardaSerie", "guardaserie.skin")
+                        eurostreamingDomain = UserPreferences.getCustomProviderDomain("Eurostreaming", "eurostreaming.quest")
                         showImportDialog = false
                         savedMessage = true
                     },

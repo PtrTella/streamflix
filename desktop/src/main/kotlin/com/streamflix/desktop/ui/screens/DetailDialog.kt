@@ -65,6 +65,7 @@ fun DetailDialog(
 
     // Parallel multi-provider search for the current title
     LaunchedEffect(media.title) {
+        val cleanQuery = AggregatorService.cleanTitleForSearch(media.title).ifBlank { media.title }
         val providers = AggregatorService.getActiveProviders()
         val currentNames = availableSources.map { it.providerName.lowercase() }.toSet()
         val providersToQuery = providers.filter { p ->
@@ -75,11 +76,11 @@ fun DetailDialog(
             providersToQuery.forEach { provider ->
                 launch {
                     try {
-                        val results = provider.search(media.title)
+                        val results = provider.search(cleanQuery)
                         val match = results.firstOrNull { item ->
                             when (item) {
-                                is Movie -> AggregatorService.isSimilarTitle(item.title, media.title)
-                                is TvShow -> AggregatorService.isSimilarTitle(item.title, media.title)
+                                is Movie -> AggregatorService.isSimilarTitle(item.title, cleanQuery) || AggregatorService.isSimilarTitle(item.title, media.title)
+                                is TvShow -> AggregatorService.isSimilarTitle(item.title, cleanQuery) || AggregatorService.isSimilarTitle(item.title, media.title)
                                 else -> false
                             }
                         }
