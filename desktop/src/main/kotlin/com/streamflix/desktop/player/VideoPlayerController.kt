@@ -86,6 +86,18 @@ object VideoPlayerController {
         val referer = headers["Referer"] ?: headers["referer"] ?: ""
         val userAgent = headers["User-Agent"] ?: headers["user-agent"] ?: ""
 
+        val effReferer = when {
+            referer.isNotBlank() -> referer
+            streamUrl.contains("mxcontent.net") -> "https://mixdrop.co/"
+            streamUrl.contains("vixcloud.co") -> "https://vixcloud.co/"
+            streamUrl.contains("maxstream.video") -> "https://maxstream.video/"
+            else -> ""
+        }
+        val effUserAgent = when {
+            userAgent.isNotBlank() -> userAgent
+            else -> "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        }
+
         val vlcBinary = File("/Applications/VLC.app/Contents/MacOS/VLC")
         val iinaBinary = File("/Applications/IINA.app/Contents/MacOS/IINA")
 
@@ -93,17 +105,16 @@ object VideoPlayerController {
             iinaBinary.exists() -> {
                 // IINA is native Swift Apple Silicon and performs exceptionally well
                 val cmd = mutableListOf("/usr/bin/open", "-a", "IINA", streamUrl)
-                if (referer.isNotBlank()) {
-                    cmd.addAll(listOf("--args", "--mpv-referrer=$referer"))
+                if (effReferer.isNotBlank()) {
+                    cmd.addAll(listOf("--args", "--mpv-referrer=$effReferer"))
                 }
                 ProcessBuilder(cmd).start()
             }
             vlcBinary.exists() -> {
-                // VLC binary runs smoothly as an external standalone process (even under Rosetta 2)
-                val cmd = mutableListOf(vlcBinary.absolutePath)
-                if (referer.isNotBlank()) cmd.add("--http-referrer=$referer")
-                if (userAgent.isNotBlank()) cmd.add("--http-user-agent=$userAgent")
-                cmd.add(streamUrl)
+                // VLC binary runs smoothly as an external standalone process
+                val cmd = mutableListOf(vlcBinary.absolutePath, streamUrl)
+                if (effReferer.isNotBlank()) cmd.add(":http-referrer=$effReferer")
+                if (effUserAgent.isNotBlank()) cmd.add(":http-user-agent=$effUserAgent")
                 ProcessBuilder(cmd).start()
             }
             else -> {
@@ -122,9 +133,21 @@ object VideoPlayerController {
             val referer = headers["Referer"] ?: headers["referer"] ?: ""
             val userAgent = headers["User-Agent"] ?: headers["user-agent"] ?: ""
 
+            val effReferer = when {
+                referer.isNotBlank() -> referer
+                streamUrl.contains("mxcontent.net") -> "https://mixdrop.co/"
+                streamUrl.contains("vixcloud.co") -> "https://vixcloud.co/"
+                streamUrl.contains("maxstream.video") -> "https://maxstream.video/"
+                else -> ""
+            }
+            val effUserAgent = when {
+                userAgent.isNotBlank() -> userAgent
+                else -> "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
+
             val options = mutableListOf<String>()
-            if (referer.isNotBlank()) options.add(":http-referrer=$referer")
-            if (userAgent.isNotBlank()) options.add(":http-user-agent=$userAgent")
+            if (effReferer.isNotBlank()) options.add(":http-referrer=$effReferer")
+            if (effUserAgent.isNotBlank()) options.add(":http-user-agent=$effUserAgent")
 
             component.mediaPlayer().media().play(streamUrl, *options.toTypedArray())
             component

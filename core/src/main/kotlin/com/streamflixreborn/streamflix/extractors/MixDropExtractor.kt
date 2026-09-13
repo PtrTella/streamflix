@@ -65,7 +65,8 @@ class MixDropExtractor : Extractor() {
         return Video(
             source = finalUrl,
             headers = mapOf(
-                "User-Agent" to DEFAULT_USER_AGENT
+                "User-Agent" to DEFAULT_USER_AGENT,
+                "Referer" to "https://mixdrop.co/"
             ),
             extraBuffering = true
         )
