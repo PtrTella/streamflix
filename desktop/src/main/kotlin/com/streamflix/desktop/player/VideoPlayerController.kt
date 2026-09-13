@@ -28,8 +28,25 @@ object VideoPlayerController {
         return File("/Applications/IINA.app").exists()
     }
 
+    private fun resolveStreamUrl(streamUrl: String): String {
+        return if (streamUrl.startsWith("data:")) {
+            try {
+                val base64Data = streamUrl.substringAfter("base64,")
+                val bytes = java.util.Base64.getDecoder().decode(base64Data)
+                val tempFile = File.createTempFile("streamflix_stream_", ".m3u8")
+                tempFile.deleteOnExit()
+                tempFile.writeBytes(bytes)
+                tempFile.absolutePath
+            } catch (_: Exception) {
+                streamUrl
+            }
+        } else {
+            streamUrl
+        }
+    }
+
     fun launchExternalPlayer(video: Video, serverName: String = "") {
-        val streamUrl = video.source
+        val streamUrl = resolveStreamUrl(video.source)
         val headers = video.headers ?: emptyMap()
         val referer = headers["Referer"] ?: headers["referer"] ?: ""
         val userAgent = headers["User-Agent"] ?: headers["user-agent"] ?: ""
@@ -62,7 +79,7 @@ object VideoPlayerController {
     fun createMediaPlayerComponent(video: Video): EmbeddedMediaPlayerComponent {
         configureVlcDiscovery()
         val component = EmbeddedMediaPlayerComponent()
-        val streamUrl = video.source
+        val streamUrl = resolveStreamUrl(video.source)
         val headers = video.headers ?: emptyMap()
         val referer = headers["Referer"] ?: headers["referer"] ?: ""
         val userAgent = headers["User-Agent"] ?: headers["user-agent"] ?: ""

@@ -75,11 +75,11 @@ object AggregatorService {
             for (item in cat.list) {
                 when (item) {
                     is Movie -> {
-                        val unified = toUnified(item)
+                        val unified = toUnified(item, item.providerName ?: "StreamingCommunity")
                         mergeOrAdd(list, unified)
                     }
                     is TvShow -> {
-                        val unified = toUnified(item)
+                        val unified = toUnified(item, item.providerName ?: "StreamingCommunity")
                         mergeOrAdd(list, unified)
                     }
                 }
@@ -97,7 +97,20 @@ object AggregatorService {
         val results = providers.map { provider ->
             async {
                 runCatching {
-                    provider.search(query)
+                    val res = provider.search(query)
+                    res.map { item ->
+                        when (item) {
+                            is Movie -> {
+                                if (item.providerName == null) item.providerName = provider.name
+                                item
+                            }
+                            is TvShow -> {
+                                if (item.providerName == null) item.providerName = provider.name
+                                item
+                            }
+                            else -> item
+                        }
+                    }
                 }.getOrDefault(emptyList())
             }
         }.awaitAll().flatten()
@@ -105,11 +118,45 @@ object AggregatorService {
         val unifiedList = mutableListOf<UnifiedMedia>()
         for (item in results) {
             when (item) {
-                is Movie -> mergeOrAdd(unifiedList, toUnified(item))
-                is TvShow -> mergeOrAdd(unifiedList, toUnified(item))
+                is Movie -> mergeOrAdd(unifiedList, toUnified(item, item.providerName ?: "StreamingCommunity"))
+                is TvShow -> mergeOrAdd(unifiedList, toUnified(item, item.providerName ?: "StreamingCommunity"))
             }
         }
         unifiedList
+    }
+
+    fun levenshteinDistance(s1: String, s2: String): Int {
+        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
+        for (i in 0..s1.length) dp[i][0] = i
+        for (j in 0..s2.length) dp[0][j] = j
+        for (i in 1..s1.length) {
+            for (j in 1..s2.length) {
+                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
+                dp[i][j] = minOf(
+                    dp[i - 1][j] + 1,
+                    dp[i][j - 1] + 1,
+                    dp[i - 1][j - 1] + cost
+                )
+            }
+        }
+        return dp[s1.length][s2.length]
+    }
+
+    fun isSimilarTitle(t1: String, t2: String): Boolean {
+        val n1 = normalizeTitle(t1)
+        val n2 = normalizeTitle(t2)
+        if (n1 == n2) return true
+        if (n1.contains(n2) || n2.contains(n1)) return true
+        val maxLen = maxOf(n1.length, n2.length)
+        if (maxLen <= 3) return n1 == n2
+        val dist = levenshteinDistance(n1, n2)
+        // Permette 1 errore per parole corte, 2 per medie, 3 per lunghe
+        val allowedDist = when {
+            maxLen <= 6 -> 1
+            maxLen <= 12 -> 2
+            else -> 3
+        }
+        return dist <= allowedDist
     }
 
     private fun normalizeTitle(title: String): String {
@@ -120,9 +167,11 @@ object AggregatorService {
     }
 
     private fun mergeOrAdd(list: MutableList<UnifiedMedia>, item: UnifiedMedia) {
-        val normalized = normalizeTitle(item.title)
-        val existing = list.find { normalizeTitle(it.title) == normalized && it.isTvShow == item.isTvShow }
+        val existing = list.find { 
+            it.isTvShow == item.isTvShow && isSimilarTitle(it.title, item.title) 
+        }
         if (existing != null) {
+            // Unisci le sinossi o dati mancanti se uno dei due ne ha di migliori
             item.sources.forEach { source ->
                 if (existing.sources.none { it.providerName == source.providerName }) {
                     existing.sources.add(source)
@@ -133,9 +182,9 @@ object AggregatorService {
         }
     }
 
-    private fun toUnified(movie: Movie): UnifiedMedia {
+    private fun toUnified(movie: Movie, defaultProviderName: String = "StreamingCommunity"): UnifiedMedia {
         val year = movie.released?.get(java.util.Calendar.YEAR)?.toString()
-        val providerName = movie.providerName ?: "StreamingCommunity"
+        val providerName = movie.providerName ?: defaultProviderName
         return UnifiedMedia(
             id = movie.id,
             title = movie.title,
@@ -149,9 +198,9 @@ object AggregatorService {
         )
     }
 
-    private fun toUnified(tvShow: TvShow): UnifiedMedia {
+    private fun toUnified(tvShow: TvShow, defaultProviderName: String = "StreamingCommunity"): UnifiedMedia {
         val year = tvShow.released?.get(java.util.Calendar.YEAR)?.toString()
-        val providerName = tvShow.providerName ?: "StreamingCommunity"
+        val providerName = tvShow.providerName ?: defaultProviderName
         return UnifiedMedia(
             id = tvShow.id,
             title = tvShow.title,

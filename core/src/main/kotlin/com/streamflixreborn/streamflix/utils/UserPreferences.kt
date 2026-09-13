@@ -194,15 +194,86 @@ object UserPreferences {
         savePreferences()
     }
 
-    fun importCustomDomains(domainsJson: String) {
+    var remoteDomainsUrl: String
+        get() = storage["REMOTE_DOMAINS_URL"] as? String ?: ""
+        set(value) {
+            storage["REMOTE_DOMAINS_URL"] = value.trim()
+            savePreferences()
+        }
+
+    fun cleanDomain(raw: String): String {
+        return raw.trim()
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .substringBefore("/")
+            .trim()
+    }
+
+    fun importCustomDomains(domainsJson: String): Int {
+        var count = 0
         try {
-            val json = JSONObject(domainsJson)
-            json.keys().forEach { providerName ->
-                val domain = json.getString(providerName)
-                setCustomProviderDomain(providerName, domain)
+            val trimmed = domainsJson.trim()
+            if (trimmed.startsWith("{")) {
+                val json = JSONObject(trimmed)
+                json.keys().forEach { key ->
+                    val rawVal = json.optString(key, "")
+                    if (rawVal.isNotBlank()) {
+                        val cleaned = cleanDomain(rawVal)
+                        setCustomProviderDomain(key, cleaned)
+                        if (key.equals("StreamingCommunity", ignoreCase = true)) {
+                            streamingcommunityDomain = cleaned
+                        }
+                        count++
+                    }
+                }
+            } else if (trimmed.startsWith("[")) {
+                val array = JSONArray(trimmed)
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val name = obj.optString("name").ifEmpty { obj.optString("provider") }
+                    val domain = obj.optString("domain").ifEmpty { obj.optString("url") }
+                    if (name.isNotBlank() && domain.isNotBlank()) {
+                        val cleaned = cleanDomain(domain)
+                        setCustomProviderDomain(name, cleaned)
+                        if (name.equals("StreamingCommunity", ignoreCase = true)) {
+                            streamingcommunityDomain = cleaned
+                        }
+                        count++
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to import custom domains: ${e.message}")
+        }
+        return count
+    }
+
+    suspend fun syncRemoteDomains(): Boolean {
+        val url = remoteDomainsUrl.takeIf { it.isNotBlank() } ?: return false
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .dns(DnsResolver.doh)
+                    .build()
+                val request = okhttp3.Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 StreamFlix-macOS")
+                    .build()
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val body = response.body?.string()?.trim().orEmpty()
+                    if (body.isNotBlank()) {
+                        val imported = importCustomDomains(body)
+                        return@withContext imported > 0
+                    }
+                }
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to sync remote domains: ${e.message}")
+                false
+            }
         }
     }
 

@@ -8,7 +8,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,10 +22,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.streamflix.desktop.theme.*
 import com.streamflixreborn.streamflix.utils.UserPreferences
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(modifier: Modifier = Modifier) {
+    val coroutineScope = rememberCoroutineScope()
     var dohUrl by remember { mutableStateOf(UserPreferences.dohProviderUrl) }
+    var remoteUrl by remember { mutableStateOf(UserPreferences.remoteDomainsUrl) }
     var scDomain by remember { mutableStateOf(UserPreferences.streamingcommunityDomain) }
     var cb01Domain by remember { mutableStateOf(UserPreferences.getCustomProviderDomain("CB01", "cb01uno.homes")) }
     var altaDomain by remember { mutableStateOf(UserPreferences.getCustomProviderDomain("Altadefinizione01", "altadefinizione01.baby")) }
@@ -32,6 +37,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var importJsonText by remember { mutableStateOf("") }
     var showImportDialog by remember { mutableStateOf(false) }
     var savedMessage by remember { mutableStateOf(false) }
+    var isSyncingRemote by remember { mutableStateOf(false) }
+    var syncMessage by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier.fillMaxSize().padding(28.dp)) {
         Row(
@@ -58,6 +65,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 Button(
                     onClick = {
                         UserPreferences.dohProviderUrl = dohUrl
+                        UserPreferences.remoteDomainsUrl = remoteUrl
                         UserPreferences.streamingcommunityDomain = scDomain
                         UserPreferences.setCustomProviderDomain("CB01", cb01Domain)
                         UserPreferences.setCustomProviderDomain("Altadefinizione01", altaDomain)
@@ -95,6 +103,90 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(24.dp))
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxWidth()) {
+            // Sezione Lista Canali / Domini Remota (Auto-aggiornante)
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Sync, contentDescription = null, tint = AccentRed)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Lista Domini Remota (Auto-aggiornante)", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "Inserisci l'URL di un file JSON remoto (es. GitHub raw, Pastebin). L'app scaricherà e aggiornerà automaticamente i domini ad ogni avvio o manualmente.",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = remoteUrl,
+                                onValueChange = { remoteUrl = it },
+                                label = { Text("URL File JSON Remoto") },
+                                placeholder = { Text("https://raw.githubusercontent.com/.../domains.json") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = SurfaceHighlight,
+                                    unfocusedContainerColor = SurfaceHighlight,
+                                    focusedBorderColor = AccentRed,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                )
+                            )
+
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        isSyncingRemote = true
+                                        UserPreferences.remoteDomainsUrl = remoteUrl
+                                        val ok = UserPreferences.syncRemoteDomains()
+                                        if (ok) {
+                                            scDomain = UserPreferences.streamingcommunityDomain
+                                            cb01Domain = UserPreferences.getCustomProviderDomain("CB01", "cb01uno.homes")
+                                            altaDomain = UserPreferences.getCustomProviderDomain("Altadefinizione01", "altadefinizione01.baby")
+                                            animeWorldDomain = UserPreferences.getCustomProviderDomain("AnimeWorld", "animeworld.so")
+                                            syncMessage = "Domini aggiornati con successo dalla lista remota!"
+                                        } else {
+                                            syncMessage = "Impossibile scaricare o applicare la lista remota (verifica URL o connessione)."
+                                        }
+                                        isSyncingRemote = false
+                                    }
+                                },
+                                enabled = !isSyncingRemote && remoteUrl.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = SurfaceHighlight),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.height(56.dp)
+                            ) {
+                                if (isSyncingRemote) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = AccentRed)
+                                } else {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Aggiorna Ora")
+                                }
+                            }
+                        }
+
+                        if (syncMessage != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = syncMessage!!,
+                                fontSize = 12.sp,
+                                color = if (syncMessage!!.contains("successo")) Color(0xFF4ADE80) else AccentRed
+                            )
+                        }
+                    }
+                }
+            }
+
             // Sezione DoH (Bypass Piracy Shield / AGCOM)
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark), shape = RoundedCornerShape(12.dp)) {

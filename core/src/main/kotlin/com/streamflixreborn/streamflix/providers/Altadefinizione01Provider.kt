@@ -27,12 +27,14 @@ import retrofit2.http.Headers
 import retrofit2.http.Url
 import retrofit2.http.Path
 import retrofit2.http.Query
+import com.streamflixreborn.streamflix.utils.UserPreferences
 import retrofit2.http.Header
 
 object Altadefinizione01Provider : Provider {
 
     override val name: String = "Altadefinizione01"
-    override val baseUrl: String = "https://altadefinizione-01.fun"
+    override val baseUrl: String
+        get() = "https://" + UserPreferences.getCustomProviderDomain("Altadefinizione01", "altadefinizione01.baby").removePrefix("https://").removePrefix("http://").trimEnd('/')
     override val logo: String get() = "$baseUrl/templates/altadefinizione01/images/logo.png"
     override val language: String = "it"
 
@@ -116,7 +118,18 @@ object Altadefinizione01Provider : Provider {
         ): okhttp3.ResponseBody
     }
 
-    private val service = Altadefinizione01Service.build(baseUrl)
+    private var cachedService: Altadefinizione01Service? = null
+    private var cachedBaseUrl: String? = null
+
+    private val service: Altadefinizione01Service
+        get() {
+            val url = baseUrl
+            if (cachedService == null || cachedBaseUrl != url) {
+                cachedBaseUrl = url
+                cachedService = Altadefinizione01Service.build(url)
+            }
+            return cachedService!!
+        }
 
     
 

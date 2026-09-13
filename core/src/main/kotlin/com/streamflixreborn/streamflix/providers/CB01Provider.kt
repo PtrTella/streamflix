@@ -27,6 +27,7 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Url
 import com.streamflixreborn.streamflix.utils.Keys
+import com.streamflixreborn.streamflix.utils.UserPreferences
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import java.util.concurrent.TimeUnit
@@ -35,7 +36,8 @@ import org.json.JSONObject
 object CB01Provider : Provider {
 
     override val name = "CB01"
-    override val baseUrl = "https://cb01official.uno"
+    override val baseUrl: String
+        get() = "https://" + UserPreferences.getCustomProviderDomain("CB01", "cb01uno.homes").removePrefix("https://").removePrefix("http://").trimEnd('/')
     override val logo: String get() = "$baseUrl/apple-icon-180x180px.png"
     override val language = "it"
 
@@ -96,7 +98,18 @@ object CB01Provider : Provider {
         }
     }
 
-    private val service = CB01Service.build(baseUrl)
+    private var cachedService: CB01Service? = null
+    private var cachedBaseUrl: String? = null
+
+    private val service: CB01Service
+        get() {
+            val url = baseUrl
+            if (cachedService == null || cachedBaseUrl != url) {
+                cachedBaseUrl = url
+                cachedService = CB01Service.build(url)
+            }
+            return cachedService!!
+        }
 
     private interface StayService {
         @FormUrlEncoded
@@ -170,6 +183,13 @@ object CB01Provider : Provider {
             }
     }
 
+    private fun isAnnouncement(title: String, href: String): Boolean {
+        val lowerT = title.lowercase()
+        val lowerH = href.lowercase()
+        return lowerT.contains("avviso") || lowerT.contains("cambia i dns") || lowerT.contains("telegram") ||
+               lowerH.contains("avviso") || lowerH.contains("cambia-i-dns") || lowerH.contains("dns")
+    }
+
     private fun parseHomeMovie(el: Element): Movie? {
         val titleAnchor = el.selectFirst("h3.card-title a[href]") ?: return null
         val href = titleAnchor.attr("href").trim()
@@ -178,7 +198,7 @@ object CB01Provider : Provider {
         val img = el.selectFirst(".card-image img[src]")?.attr("src").orEmpty()
         val poster = img
         val quality = if (rawTitle.contains("[HD]", ignoreCase = true) || rawTitle.contains("[HD/3D]", ignoreCase = true)) "HD" else null
-        if (href.isBlank() || title.isBlank()) return null
+        if (href.isBlank() || title.isBlank() || isAnnouncement(rawTitle, href)) return null
         return Movie(
             id = href,
             title = title,
@@ -195,7 +215,7 @@ object CB01Provider : Provider {
         val img = el.selectFirst(".card-image img[src]")?.attr("src").orEmpty()
         val poster = img
         val quality = if (rawTitle.contains("[HD]", ignoreCase = true) || rawTitle.contains("[HD/3D]", ignoreCase = true)) "HD" else null
-        if (href.isBlank() || title.isBlank()) return null
+        if (href.isBlank() || title.isBlank() || isAnnouncement(rawTitle, href)) return null
         return TvShow(
             id = href,
             title = title,
@@ -212,7 +232,7 @@ object CB01Provider : Provider {
         val poster = el.selectFirst("img.rpwe-thumb")?.attr("src").orEmpty().replace("-60x90", "")
         val quality = if (rawTitle.contains("[HD]", ignoreCase = true) || rawTitle.contains("[HD/3D]", ignoreCase = true)) "HD" else null
 
-        if (href.isBlank() || title.isBlank()) return null
+        if (href.isBlank() || title.isBlank() || isAnnouncement(rawTitle, href)) return null
         return Movie(
             id = href,
             title = title,

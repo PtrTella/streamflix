@@ -32,6 +32,12 @@ fun main() = application {
             var selectedMedia by remember { mutableStateOf<UnifiedMedia?>(null) }
             var activeVideo by remember { mutableStateOf<Video?>(null) }
 
+            LaunchedEffect(Unit) {
+                if (com.streamflixreborn.streamflix.utils.UserPreferences.remoteDomainsUrl.isNotBlank()) {
+                    com.streamflixreborn.streamflix.utils.UserPreferences.syncRemoteDomains()
+                }
+            }
+
             Box(modifier = Modifier.fillMaxSize().background(BackgroundDark)) {
                 val currentVideo = activeVideo
                 if (currentVideo != null) {

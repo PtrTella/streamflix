@@ -43,6 +43,11 @@ fun DetailDialog(
     val coroutineScope = rememberCoroutineScope()
     var selectedSource by remember { mutableStateOf(media.sources.firstOrNull()) }
 
+    var currentOverview by remember { mutableStateOf(media.overview) }
+    var currentPoster by remember { mutableStateOf(media.poster) }
+    var currentRating by remember { mutableStateOf(media.rating) }
+    var currentReleaseYear by remember { mutableStateOf(media.releaseYear) }
+
     var isLoadingDetails by remember { mutableStateOf(false) }
     var seasons by remember { mutableStateOf<List<Season>>(emptyList()) }
     var selectedSeason by remember { mutableStateOf<Season?>(null) }
@@ -55,7 +60,8 @@ fun DetailDialog(
     var statusMessage by remember { mutableStateOf("") }
 
     fun findProvider(name: String): Provider? {
-        return Provider.providers.keys.find { it.name == name }
+        return Provider.providers.keys.find { it.name.equals(name, ignoreCase = true) }
+            ?: Provider.findByName(name)
     }
 
     // Load Show / Movie details for selected source
@@ -69,23 +75,39 @@ fun DetailDialog(
             try {
                 if (source.isTvShow) {
                     val tvShow = provider.getTvShow(source.providerId)
+                    if (!tvShow.overview.isNullOrBlank()) currentOverview = tvShow.overview
+                    if (!tvShow.poster.isNullOrBlank()) currentPoster = tvShow.poster
+                    val r = tvShow.rating
+                    if (r != null && r > 0.0) currentRating = r
+                    val y = tvShow.released?.get(java.util.Calendar.YEAR)?.toString()
+                    if (!y.isNullOrBlank()) currentReleaseYear = y
                     seasons = tvShow.seasons
                     selectedSeason = tvShow.seasons.firstOrNull()
                 } else {
-                    // Movie: fetch servers directly
+                    // Movie: fetch full movie details first (for overview, real metadata), then get servers
                     isLoadingServers = true
+                    val movie = runCatching { provider.getMovie(source.providerId) }.getOrNull()
+                    if (movie != null) {
+                        if (!movie.overview.isNullOrBlank()) currentOverview = movie.overview
+                        if (!movie.poster.isNullOrBlank()) currentPoster = movie.poster
+                        val mr = movie.rating
+                        if (mr != null && mr > 0.0) currentRating = mr
+                        val y = movie.released?.get(java.util.Calendar.YEAR)?.toString()
+                        if (!y.isNullOrBlank()) currentReleaseYear = y
+                    }
                     val movieType = Video.Type.Movie(
-                        id = source.providerId,
-                        title = media.title,
-                        releaseDate = media.releaseYear ?: "",
-                        poster = media.poster ?: "",
-                        imdbId = null
+                        id = movie?.id ?: source.providerId,
+                        title = movie?.title ?: media.title,
+                        releaseDate = currentReleaseYear ?: "",
+                        poster = currentPoster ?: "",
+                        imdbId = movie?.imdbId
                     )
-                    servers = provider.getServers(source.providerId, movieType)
+                    servers = provider.getServers(movieType.id, movieType)
                     isLoadingServers = false
                 }
             } catch (e: Exception) {
                 statusMessage = "Errore sorgente: ${e.message}"
+                isLoadingServers = false
             }
         }
         isLoadingDetails = false
@@ -156,7 +178,7 @@ fun DetailDialog(
                     item {
                         Row(modifier = Modifier.fillMaxWidth()) {
                             AsyncImage(
-                                url = media.poster,
+                                url = currentPoster ?: media.poster,
                                 contentDescription = media.title,
                                 modifier = Modifier
                                     .width(130.dp)
@@ -187,11 +209,11 @@ fun DetailDialog(
 
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = media.releaseYear ?: "",
+                                        text = currentReleaseYear ?: media.releaseYear ?: "",
                                         fontSize = 13.sp,
                                         color = TextSecondary
                                     )
-                                    val rating = media.rating
+                                    val rating = currentRating ?: media.rating
                                     if (rating != null && rating > 0.0) {
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Text(
@@ -206,10 +228,10 @@ fun DetailDialog(
                                 Spacer(modifier = Modifier.height(10.dp))
 
                                 Text(
-                                    text = media.overview ?: "Nessuna sinossi disponibile.",
+                                    text = currentOverview ?: media.overview ?: "Nessuna sinossi disponibile.",
                                     fontSize = 13.sp,
                                     color = TextSecondary,
-                                    maxLines = 4
+                                    maxLines = 6
                                 )
                             }
                         }
@@ -361,13 +383,22 @@ fun DetailDialog(
                                                         onClick = {
                                                             coroutineScope.launch {
                                                                 resolvingServerId = server.id
-                                                                val provider = findProvider(selectedSource?.providerName ?: "")
-                                                                val video = withContext(Dispatchers.IO) {
-                                                                    provider?.getVideo(server)
-                                                                }
-                                                                resolvingServerId = null
-                                                                if (video != null) {
-                                                                    VideoPlayerController.launchExternalPlayer(video, server.name)
+                                                                statusMessage = "Risoluzione stream per ${server.name}..."
+                                                                try {
+                                                                    val provider = findProvider(selectedSource?.providerName ?: "")
+                                                                    val video = withContext(Dispatchers.IO) {
+                                                                        provider?.getVideo(server)
+                                                                    }
+                                                                    if (video != null) {
+                                                                        statusMessage = ""
+                                                                        VideoPlayerController.launchExternalPlayer(video, server.name)
+                                                                    } else {
+                                                                        statusMessage = "Impossibile estrarre lo stream da ${server.name}"
+                                                                    }
+                                                                } catch (e: Exception) {
+                                                                    statusMessage = "Errore stream: ${e.message ?: "Fallito"}"
+                                                                } finally {
+                                                                    resolvingServerId = null
                                                                 }
                                                             }
                                                         },
@@ -385,13 +416,22 @@ fun DetailDialog(
                                                         onClick = {
                                                             coroutineScope.launch {
                                                                 resolvingServerId = server.id
-                                                                val provider = findProvider(selectedSource?.providerName ?: "")
-                                                                val video = withContext(Dispatchers.IO) {
-                                                                    provider?.getVideo(server)
-                                                                }
-                                                                resolvingServerId = null
-                                                                if (video != null) {
-                                                                    onPlayVideo(video)
+                                                                statusMessage = "Risoluzione stream per ${server.name}..."
+                                                                try {
+                                                                    val provider = findProvider(selectedSource?.providerName ?: "")
+                                                                    val video = withContext(Dispatchers.IO) {
+                                                                        provider?.getVideo(server)
+                                                                    }
+                                                                    if (video != null) {
+                                                                        statusMessage = ""
+                                                                        onPlayVideo(video)
+                                                                    } else {
+                                                                        statusMessage = "Impossibile estrarre lo stream da ${server.name}"
+                                                                    }
+                                                                } catch (e: Exception) {
+                                                                    statusMessage = "Errore stream: ${e.message ?: "Fallito"}"
+                                                                } finally {
+                                                                    resolvingServerId = null
                                                                 }
                                                             }
                                                         },
